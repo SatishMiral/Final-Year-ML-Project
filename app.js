@@ -7,13 +7,11 @@ import express from 'express';
 import cors from 'cors';
 
 const app = express();
-app.use(cors());  // Enable CORS for all requests
+app.use(cors());
 
-// Add a route to accept Flipkart URL as a query parameter
 app.get('/start-puppeteer', async (req, res) => {
     try {
-        console.log("FlipKart URL: " + req.query.url);
-        const flipkartUrl = req.query.url;  // Get the Flipkart URL from the query parameter
+        const flipkartUrl = req.query.url;
         
         if (!flipkartUrl) {
             return res.status(400).send('Flipkart URL is required.');
@@ -21,81 +19,66 @@ app.get('/start-puppeteer', async (req, res) => {
 
         const browser = await puppeteer.launch();
         const page = await browser.newPage();
-
-        // Navigate to the Flipkart page using the dynamic URL
         await page.goto(flipkartUrl);
 
-        // Wait for the element with the class _6EBuvT to be present
         await page.waitForSelector('._6EBuvT');
-
-        // Extract the product name or relevant text from Flipkart
+        
         const extractedText = await page.evaluate(() => {
             const element = document.querySelector('._6EBuvT');
-            return element ? element.innerText : 'Element not found';
+            return element ? element.innerText : null;
         });
-
-        // Extract the price from Flipkart
         const extractedPrice = await page.evaluate(() => {
             const price = document.querySelector('.Nx9bqj.CxhGGd');
-            return price ? price.innerText : 'Element not found';
+            return price ? price.innerText : null;
         });
-
-        // Extract the imgUrl from Flipkart
         const extractedUrl = await page.evaluate(() => {
             const divElement = document.querySelector('.DByuf4.IZexXJ.jLEJ7H');
-            return divElement ? divElement.getAttribute('src') : 'Element not found';
+            return divElement ? divElement.getAttribute('src') : null;
         });
 
-        console.log('Extracted Price from Flipkart:', extractedPrice);
-        console.log('Extracted Text from Flipkart:', extractedText);
-        console.log('Extracted Url from Flipkart:', extractedUrl);
-
-        // Navigate to Amazon and get search results based on the extracted text
         const amazonUrl = `https://www.amazon.in/s?k=${encodeURIComponent(extractedText)}`;
         await page.goto(amazonUrl);
 
-        // Extract Amazon results
         const results = await page.evaluate(() => {
             const items = [];
             const priceElements = document.querySelectorAll('.a-price-whole');
             const ratingElements = document.querySelectorAll('.a-icon-alt');
             const linkElements = document.querySelectorAll('.a-link-normal.s-underline-text.s-underline-link-text.s-link-style.a-text-normal');
-            const imgUrlElements = document.querySelectorAll('.s-image'); // Select image URL on Amazon
+            const imgUrlElements = document.querySelectorAll('.s-image');
 
             const price = priceElements[0]?.innerText || "No price available";
             const rating = ratingElements[0]?.innerText?.slice(0, 3) || "No rating available";
             const link = linkElements[0]?.href || "No Link Available";
-            const imgUrl = imgUrlElements[0]?.getAttribute('src') || "No image URL available"; // Extract image URL
+            const imgUrl = imgUrlElements[0]?.getAttribute('src') || null;
 
             items.push({ price, rating, link, imgUrl });
-            
             return items;
         });
 
         await browser.close();
 
-        // Calculate similarity percentage only for the first image URL if valid URLs exist
         let firstResultSimilarityPercentage = null;
-        if (results.length > 0 && extractedUrl !== 'Element not found' && results[0].imgUrl !== 'No image URL available') {
-            firstResultSimilarityPercentage = await calculateImageSimilarity(extractedUrl, results[0].imgUrl);
-            console.log(`Matching Percentage for the first Amazon result: ${firstResultSimilarityPercentage.toFixed(2)}%`); // Log the matching percentage
+        if (results.length > 0 && extractedUrl && results[0].imgUrl) {
+            try {
+                firstResultSimilarityPercentage = await calculateImageSimilarity(extractedUrl, results[0].imgUrl);
+                console.log(`Matching Percentage for the first Amazon result: ${firstResultSimilarityPercentage.toFixed(2)}%`);
+            } catch (error) {
+                console.error("Error calculating image similarity:", error);
+            }
         } else {
             console.log("Skipping similarity calculation due to missing image URL");
         }
 
-        // Include the first result and similarity percentage in the response
         const responseData = {
             results: results.map((result, index) => ({
                 ...result,
                 extractedPrice,
                 extractedUrl,
-                percentage: index === 0 ? firstResultSimilarityPercentage : null // Only attach percentage to the first result
+                percentage: index === 0 ? firstResultSimilarityPercentage : null 
             }))
         };
 
         console.log("Final Result:", responseData);
-
-        // Send back the extracted data as a response
         res.json(responseData);
     } catch (error) {
         console.error("Error running Puppeteer:", error);
@@ -103,8 +86,7 @@ app.get('/start-puppeteer', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT;
-
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server is running on Port:${PORT}`);
 });
