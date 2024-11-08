@@ -7,7 +7,6 @@ import express from 'express';
 import cors from 'cors';
 
 const app = express();
-
 app.use(cors());  // Enable CORS for all requests
 
 // Add a route to accept Flipkart URL as a query parameter
@@ -73,14 +72,15 @@ app.get('/start-puppeteer', async (req, res) => {
             return items;
         });
 
-        // console.log("Amazon Results:", results);
         await browser.close();
 
-        // Calculate similarity percentage only for the first image URL
+        // Calculate similarity percentage only for the first image URL if valid URLs exist
         let firstResultSimilarityPercentage = null;
-        if (results.length > 0) {
+        if (results.length > 0 && extractedUrl !== 'Element not found' && results[0].imgUrl !== 'No image URL available') {
             firstResultSimilarityPercentage = await calculateImageSimilarity(extractedUrl, results[0].imgUrl);
             console.log(`Matching Percentage for the first Amazon result: ${firstResultSimilarityPercentage.toFixed(2)}%`); // Log the matching percentage
+        } else {
+            console.log("Skipping similarity calculation due to missing image URL");
         }
 
         // Include the first result and similarity percentage in the response
@@ -93,8 +93,7 @@ app.get('/start-puppeteer', async (req, res) => {
             }))
         };
 
-        // Log the final result correctly
-        console.log("Final Result:", responseData); // Log the final responseData as a formatted JSON string
+        console.log("Final Result:", responseData);
 
         // Send back the extracted data as a response
         res.json(responseData);

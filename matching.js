@@ -4,6 +4,9 @@ import * as tf from '@tensorflow/tfjs';
 
 // Function to load and preprocess an image from a URL
 async function loadImageFromUrl(url) {
+    if (!url || !url.startsWith('http')) {
+        throw new Error('Invalid or missing URL');
+    }
     const response = await fetch(url);
     const buffer = await response.buffer();
     const img = await loadImage(buffer);
