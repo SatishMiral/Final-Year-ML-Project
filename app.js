@@ -9,6 +9,12 @@ import cors from 'cors';
 const app = express();
 app.use(cors());
 
+// Launch a single browser instance and reuse it
+let browser;
+(async () => {
+    browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+})();
+
 app.get('/start-puppeteer', async (req, res) => {
     try {
         const flipkartUrl = req.query.url;
@@ -17,51 +23,52 @@ app.get('/start-puppeteer', async (req, res) => {
             return res.status(400).send('Flipkart URL is required.');
         }
 
-        const browser = await puppeteer.launch();
         const page = await browser.newPage();
-        await page.goto(flipkartUrl);
-
-        await page.waitForSelector('._6EBuvT');
         
-        const extractedText = await page.evaluate(() => {
-            const element = document.querySelector('._6EBuvT');
-            return element ? element.innerText : null;
+        // Disable images, CSS, and fonts to speed up loading
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            if (['stylesheet', 'font'].includes(req.resourceType())) {
+                req.abort();
+            } else {
+                req.continue();
+            }
         });
-        const extractedPrice = await page.evaluate(() => {
-            const price = document.querySelector('.Nx9bqj.CxhGGd');
-            return price ? price.innerText : null;
-        });
-        const extractedUrl = await page.evaluate(() => {
-            const divElement = document.querySelector('.DByuf4.IZexXJ.jLEJ7H');
-            return divElement ? divElement.getAttribute('src') : null;
-        });
+
+        await page.goto(flipkartUrl, { waitUntil: 'domcontentloaded' });
+
+        // Wait and extract text and price
+        await page.waitForSelector('._6EBuvT');
+        const extractedText = await page.$eval('._6EBuvT', el => el.innerText);
+        const extractedPrice = await page.$eval('.Nx9bqj.CxhGGd', el => el.innerText || null);
+        const extractedUrl = await page.$eval('.DByuf4.IZexXJ.jLEJ7H', el => el.getAttribute('src') || null);
 
         const amazonUrl = `https://www.amazon.in/s?k=${encodeURIComponent(extractedText)}`;
-        await page.goto(amazonUrl);
+        await page.goto(amazonUrl, { waitUntil: 'domcontentloaded' });
 
         const results = await page.evaluate(() => {
             const items = [];
-            const priceElements = document.querySelectorAll('.a-price-whole');
-            const ratingElements = document.querySelectorAll('.a-icon-alt');
-            const linkElements = document.querySelectorAll('.a-link-normal.s-underline-text.s-underline-link-text.s-link-style.a-text-normal');
-            const imgUrlElements = document.querySelectorAll('.s-image');
+            const priceElement = document.querySelector('.a-price-whole');
+            const ratingElement = document.querySelector('.a-icon-alt');
+            const linkElement = document.querySelector('.a-link-normal.s-underline-text.s-underline-link-text.s-link-style.a-text-normal');
+            const imgUrlElement = document.querySelector('.s-image');
 
-            const price = priceElements[0]?.innerText || "No price available";
-            const rating = ratingElements[0]?.innerText?.slice(0, 3) || "No rating available";
-            const link = linkElements[0]?.href || "No Link Available";
-            const imgUrl = imgUrlElements[0]?.getAttribute('src') || null;
+            const price = priceElement?.innerText || "No price available";
+            const rating = ratingElement?.innerText?.slice(0, 3) || "No rating available";
+            const link = linkElement?.href || "No Link Available";
+            const imgUrl = imgUrlElement?.getAttribute('src') || null;
 
             items.push({ price, rating, link, imgUrl });
             return items;
         });
 
-        await browser.close();
+        await page.close();
 
         let firstResultSimilarityPercentage = null;
         if (results.length > 0 && extractedUrl && results[0].imgUrl) {
             try {
                 firstResultSimilarityPercentage = await calculateImageSimilarity(extractedUrl, results[0].imgUrl);
-                console.log(`Matching Percentage for the first Amazon result: ${firstResultSimilarityPercentage.toFixed(2)}%`);
+                //console.log(`Matching Percentage for the first Amazon result: ${firstResultSimilarityPercentage.toFixed(2)}%`);
             } catch (error) {
                 console.error("Error calculating image similarity:", error);
             }
@@ -78,7 +85,7 @@ app.get('/start-puppeteer', async (req, res) => {
             }))
         };
 
-        console.log("Final Result:", responseData);
+        //console.log("Final Result:", responseData);
         res.json(responseData);
     } catch (error) {
         console.error("Error running Puppeteer:", error);
